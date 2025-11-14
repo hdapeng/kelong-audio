@@ -223,7 +223,9 @@
 
                 // 设置 UI 为加载中
                 setLoading(true);
-                showError(""); // 清除旧错误
+                // 显示初始提交中提示
+                statusMsg.textContent = "正在提交请求...";
+                statusMsg.className = "text-center text-blue-500 h-5";
                 audioContainer.classList.add('hidden'); // 隐藏旧音频
                 
                 // 开始计时
@@ -306,8 +308,15 @@
                         // 如果响应体不是 JSON，只显示状态
                             console.log('无法解析错误响应:', e);
                         }
+                        // 显示提交失败提示
+                        statusMsg.textContent = "提交失败，正在处理错误...";
+                        statusMsg.className = "text-center text-red-500 h-5";
                         throw new Error(`API 请求失败，${errorDetails}。请检查您的输入或 API Key。`);
                     }
+                    
+                    // 显示提交成功提示
+                    statusMsg.textContent = "提交成功，正在生成语音...";
+                    statusMsg.className = "text-center text-green-500 h-5";
 
                     // 处理成功的响应 (应该是音频流)
                     console.log('响应类型:', response.type);
@@ -382,6 +391,7 @@
 
             function showError(message) {
                 statusMsg.textContent = message;
+                statusMsg.className = "text-center text-red-500 h-5";
             }
             
             // 存储音频URL和时间戳
