@@ -228,23 +228,20 @@
 
                 // 设置 UI 为加载中
                 setLoading(true);
-                // 显示初始提交中提示
-                btnStatusText.textContent = "正在提交请求...";
                 audioContainer.classList.add('hidden'); // 隐藏旧音频
                 
                 // 开始计时
                 let startTime = Date.now();
                 let timerInterval;
                 
-                // 更新等待时间显示
+                // 更新按钮内的等待时间显示
                 const updateWaitTime = () => {
                     const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-                    waitTimeDisplay.textContent = `正在生成... 已等待 ${elapsedSeconds} 秒`;
+                    btnStatusText.textContent = `正在生成... 已等待 ${elapsedSeconds} 秒`;
                 };
                 
-                // 显示并开始更新等待时间
-                waitTimeDisplay.classList.remove('hidden');
-                updateWaitTime(); // 立即更新一次
+                // 立即更新一次按钮状态文本
+                updateWaitTime();
                 timerInterval = setInterval(updateWaitTime, 1000); // 每秒更新一次
 
                 // 构建请求体
@@ -312,13 +309,10 @@
                         // 如果响应体不是 JSON，只显示状态
                             console.log('无法解析错误响应:', e);
                         }
-                        // 显示提交失败提示
-                        btnStatusText.textContent = "提交失败，正在处理错误...";
+                        // 更新按钮状态为提交失败
+                        btnStatusText.textContent = "请求失败...";
                         throw new Error(`API 请求失败，${errorDetails}。请检查您的输入或 API Key。`);
                     }
-                    
-                    // 显示提交成功提示
-                    btnStatusText.textContent = "提交成功，正在生成语音...";
 
                     // 处理成功的响应 (应该是音频流)
                     console.log('响应类型:', response.type);
@@ -345,22 +339,14 @@
                     audioPlayer.src = audioUrl;
                     audioContainer.classList.remove('hidden'); // 显示播放器
                      
-                    // 计算并显示总用时
+                    // 计算生成用时
                     const endTime = Date.now();
-                    const computeTime = (endTime - startTime) / 1000;
-                    computeTimeDisplay.textContent = `计算用时: ${computeTime.toFixed(2)} 秒`;
-                    console.log('语音生成完成，准备更新状态消息');
+                    const totalTime = Math.floor((endTime - startTime) / 1000);
+                    computeTimeDisplay.textContent = `生成用时: ${totalTime} 秒`;
                     
-                    // 更新按钮状态为生成成功
-                    if (btnStatusContainer) {
-                        console.log('btnStatusContainer元素存在，准备更新内容');
-                        // 使用setTimeout确保DOM更新
-                        setTimeout(() => {
-                            btnStatusText.textContent = "语音生成成功！";
-                            console.log('按钮状态消息已更新为生成成功:', btnStatusText.textContent);
-                        }, 0);
-                    } else {
-                        console.error('btnStatusContainer元素不存在');
+                    // 更新按钮内的状态消息
+                    if (btnStatusContainer && btnStatusText) {
+                        btnStatusText.textContent = "语音生成成功！";
                     }
                        
                     // 存储音频URL和时间戳到localStorage
