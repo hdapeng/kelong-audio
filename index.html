@@ -347,11 +347,22 @@
                     const endTime = Date.now();
                     const computeTime = (endTime - startTime) / 1000;
                     computeTimeDisplay.textContent = `计算用时: ${computeTime.toFixed(2)} 秒`;
-                      
-                    // 更新状态为生成成功
-                    statusMsg.textContent = "语音生成成功！";
-                    statusMsg.className = "text-center text-green-500 h-5";
-                      
+                    console.log('语音生成完成，准备更新状态消息');
+                    
+                    // 确保statusMsg元素存在并更新
+                    if (statusMsg) {
+                        console.log('statusMsg元素存在，准备更新内容');
+                        // 使用setTimeout确保DOM更新
+                        setTimeout(() => {
+                            statusMsg.textContent = "语音生成成功！";
+                            statusMsg.className = "text-center text-green-500 h-5";
+                            console.log('状态消息已更新为生成成功:', statusMsg.textContent);
+                            console.log('状态消息类名:', statusMsg.className);
+                        }, 0);
+                    } else {
+                        console.error('statusMsg元素不存在');
+                    }
+                       
                     // 存储音频URL和时间戳到localStorage
                     storeAudioUrl(audioUrl);
 
