@@ -91,28 +91,16 @@
 
     <script>
         // API 配置
-        let API_KEY = "";
+        let API_KEY = "ZZIGSINNUET0SIPCUUWGOIIZEFEDVU3QHH0V5Q1D"; // 直接嵌入API密钥
         const API_URL = "https://ai.gitee.com/v1/audio/speech";
         const LAST_URL_KEY = "gitee_tts_last_prompt_url";
         const AUDIO_URLS_KEY = "gitee_tts_audio_urls"; // 存储音频URL和时间戳的键
         const AUDIO_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24小时，单位：毫秒
 
-        // 尝试从 .env 文件加载 API 密钥
+        // 加载API密钥（直接使用嵌入的密钥）
         async function loadApiKey() {
-            try {
-                const response = await fetch('.env');
-                if (response.ok) {
-                    const content = await response.text();
-                    const match = content.match(/API_KEY=(.+)/);
-                    if (match && match[1]) {
-                        API_KEY = match[1];
-                    }
-                }
-            } catch (error) {
-                console.warn('无法加载 API 密钥:', error);
-                // 如果加载失败，显示错误提示
-                showError("无法加载 API 密钥，请检查 .env 文件是否存在且格式正确");
-            }
+            // 直接使用已嵌入的API密钥
+            console.log('使用嵌入的API密钥');
         }
 
         // --- 初始化 --- (页面加载完成后执行)
