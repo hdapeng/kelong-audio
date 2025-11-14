@@ -270,7 +270,8 @@
 
                     // 设置请求超时（60秒）
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 60000);
+       // 设置3分钟超时
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
                     
                     // 发送 API 请求
                     const response = await fetch(API_URL, {
@@ -324,7 +325,7 @@
                     if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
                         friendlyError = "请求失败。这很可能是 CORS 跨域错误。请按 F12 打开开发者控制台查看网络请求。";
                     } else if (error.name === 'AbortError') {
-                        friendlyError = "请求超时。服务器响应时间超过60秒，请尝试缩短文本长度或检查网络连接。";
+                        friendlyError = "请求超时。服务器响应时间超过3分钟，请尝试缩短文本长度或检查网络连接。";
                     } else if (error.message.includes('401')) {
                         friendlyError = "API密钥无效或已过期。请检查API密钥配置。";
                     } else if (error.message.includes('404')) {
