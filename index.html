@@ -68,13 +68,16 @@
         <!-- 生成按钮 -->
         <button id="generate-btn" class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center justify-center">
             <span id="btn-text">生成语音</span>
-            <div id="btn-loader" class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-6 w-6 ml-3 hidden"></div>
+            <div id="btn-status-container" class="flex items-center hidden">
+                <div id="btn-loader" class="loader ease-linear rounded-full border-4 border-t-4 border-white h-5 w-5 mr-2"></div>
+                <span id="btn-status-text"></span>
+            </div>
         </button>
         
         <!-- 等待时间显示 -->
         <div id="wait-time" class="text-center text-sm text-gray-500 h-5 hidden"></div>
 
-        <!-- 状态/错误消息 -->
+        <!-- 状态/错误消息 (保持用于显示错误信息) -->
         <div id="status-msg" class="text-center text-red-500 h-5" role="alert"></div>
 
         <!-- 音频播放器 -->
@@ -114,7 +117,9 @@
 
             const generateBtn = document.getElementById('generate-btn');
             const btnText = document.getElementById('btn-text');
+            const btnStatusContainer = document.getElementById('btn-status-container');
             const btnLoader = document.getElementById('btn-loader');
+            const btnStatusText = document.getElementById('btn-status-text');
 
             const statusMsg = document.getElementById('status-msg');
             const waitTimeDisplay = document.getElementById('wait-time');
@@ -224,8 +229,7 @@
                 // 设置 UI 为加载中
                 setLoading(true);
                 // 显示初始提交中提示
-                statusMsg.textContent = "正在提交请求...";
-                statusMsg.className = "text-center text-blue-500 h-5";
+                btnStatusText.textContent = "正在提交请求...";
                 audioContainer.classList.add('hidden'); // 隐藏旧音频
                 
                 // 开始计时
@@ -309,14 +313,12 @@
                             console.log('无法解析错误响应:', e);
                         }
                         // 显示提交失败提示
-                        statusMsg.textContent = "提交失败，正在处理错误...";
-                        statusMsg.className = "text-center text-red-500 h-5";
+                        btnStatusText.textContent = "提交失败，正在处理错误...";
                         throw new Error(`API 请求失败，${errorDetails}。请检查您的输入或 API Key。`);
                     }
                     
                     // 显示提交成功提示
-                    statusMsg.textContent = "提交成功，正在生成语音...";
-                    statusMsg.className = "text-center text-green-500 h-5";
+                    btnStatusText.textContent = "提交成功，正在生成语音...";
 
                     // 处理成功的响应 (应该是音频流)
                     console.log('响应类型:', response.type);
@@ -349,18 +351,16 @@
                     computeTimeDisplay.textContent = `计算用时: ${computeTime.toFixed(2)} 秒`;
                     console.log('语音生成完成，准备更新状态消息');
                     
-                    // 确保statusMsg元素存在并更新
-                    if (statusMsg) {
-                        console.log('statusMsg元素存在，准备更新内容');
+                    // 更新按钮状态为生成成功
+                    if (btnStatusContainer) {
+                        console.log('btnStatusContainer元素存在，准备更新内容');
                         // 使用setTimeout确保DOM更新
                         setTimeout(() => {
-                            statusMsg.textContent = "语音生成成功！";
-                            statusMsg.className = "text-center text-green-500 h-5";
-                            console.log('状态消息已更新为生成成功:', statusMsg.textContent);
-                            console.log('状态消息类名:', statusMsg.className);
+                            btnStatusText.textContent = "语音生成成功！";
+                            console.log('按钮状态消息已更新为生成成功:', btnStatusText.textContent);
                         }, 0);
                     } else {
-                        console.error('statusMsg元素不存在');
+                        console.error('btnStatusContainer元素不存在');
                     }
                        
                     // 存储音频URL和时间戳到localStorage
@@ -396,11 +396,13 @@
                 if (isLoading) {
                     generateBtn.disabled = true;
                     btnText.classList.add('hidden');
-                    btnLoader.classList.remove('hidden');
+                    btnStatusContainer.classList.remove('hidden');
                 } else {
                     generateBtn.disabled = false;
                     btnText.classList.remove('hidden');
-                    btnLoader.classList.add('hidden');
+                    btnStatusContainer.classList.add('hidden');
+                    // 清除状态文本
+                    btnStatusText.textContent = '';
                 }
             }
 
