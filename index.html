@@ -268,14 +268,8 @@
                         payloadLength: JSON.stringify(payload).length
                     });
 
-                    // 设置请求超时（60秒）
-                    const controller = new AbortController();
-       // 设置3分钟超时
-            const timeoutId = setTimeout(() => controller.abort(), 180000);
-                    
                     // 发送 API 请求
                     const response = await fetch(API_URL, {
-                        signal: controller.signal,
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -304,10 +298,22 @@
                     }
 
                     // 处理成功的响应 (应该是音频流)
+                    console.log('响应类型:', response.type);
+                    console.log('响应大小:', response.headers.get('content-length') || '未知');
+                    
                     const audioBlob = await response.blob();
+                    console.log('Blob类型:', audioBlob.type);
+                    console.log('Blob大小:', audioBlob.size);
 
                     // 检查返回的MIME类型
                     if (!audioBlob.type.startsWith('audio/')) {
+                         // 尝试读取非音频响应的内容
+                         try {
+                             const responseText = await response.text();
+                             console.log('非音频响应内容:', responseText);
+                         } catch (e) {
+                             console.log('无法读取非音频响应:', e);
+                         }
                          throw new Error(`API 未返回有效的音频。收到类型: ${audioBlob.type}。请检查 API Key 和输入。`);
                     }
 
@@ -324,8 +330,7 @@
                     let friendlyError = error.message;
                     if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
                         friendlyError = "请求失败。这很可能是 CORS 跨域错误。请按 F12 打开开发者控制台查看网络请求。";
-                    } else if (error.name === 'AbortError') {
-                        friendlyError = "请求超时。服务器响应时间超过3分钟，请尝试缩短文本长度或检查网络连接。";
+
                     } else if (error.message.includes('401')) {
                         friendlyError = "API密钥无效或已过期。请检查API密钥配置。";
                     } else if (error.message.includes('404')) {
@@ -335,9 +340,6 @@
                     }
                     showError(friendlyError);
                 } finally {
-                    // 清除超时定时器
-                    clearTimeout(timeoutId);
-                    
                     // 停止计时并隐藏等待时间
                     clearInterval(timerInterval);
                     waitTimeDisplay.classList.add('hidden');
