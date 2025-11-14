@@ -86,6 +86,7 @@
                 <source src="" type="audio/mpeg">
                 您的浏览器不支持 audio 元素。
             </audio>
+            <div id="compute-time" class="text-center text-sm text-gray-500 mt-2"></div>
         </div>
     </div>
 
@@ -93,6 +94,7 @@
         // API 配置
         let API_KEY = "ZZIGSINNUET0SIPCUUWGOIIZEFEDVU3QHH0V5Q1D"; // 直接嵌入API密钥
         const API_URL = "https://ai.gitee.com/v1/audio/speech";
+        console.log('API配置:', { API_URL, API_KEY: API_KEY ? '***' : '未设置' });
         const LAST_URL_KEY = "gitee_tts_last_prompt_url";
         const AUDIO_URLS_KEY = "gitee_tts_audio_urls"; // 存储音频URL和时间戳的键
         const AUDIO_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24小时，单位：毫秒
@@ -119,6 +121,7 @@
             const audioContainer = document.getElementById('audio-container');
             const audioPlayer = document.getElementById('audio-player');
             const textLengthIndicator = document.getElementById('text-length');
+            const computeTimeDisplay = document.getElementById('compute-time');
 
             // 检查关键DOM元素是否存在
             if (!inputText || !textLengthIndicator || !generateBtn) {
@@ -187,7 +190,9 @@
             }
 
             // 绑定生成按钮点击事件
+            console.log('生成按钮事件监听器已绑定');
             generateBtn.addEventListener('click', async () => {
+                console.log('生成按钮被点击，开始处理...');
                 // 获取输入值
                 let text = inputText.value;
                 const promptAudioUrl = inputPromptAudioUrl.value;
@@ -256,8 +261,12 @@
                 console.log('URL编码后:', encodeURIComponent(promptAudioUrl));
 
                 try {
+                    // 检查API_KEY是否存在
+                    console.log('API_KEY存在:', !!API_KEY);
+                    console.log('API_KEY长度:', API_KEY ? API_KEY.length : 0);
+                    
                     // 调试信息
-                    console.log('发送 API 请求:', {
+                    console.log('准备发送 API 请求:', {
                         url: API_URL,
                         method: 'POST',
                         headers: {
@@ -269,6 +278,7 @@
                     });
 
                     // 发送 API 请求
+                    console.log('正在发送API请求...');
                     const response = await fetch(API_URL, {
                         method: 'POST',
                         headers: {
@@ -277,6 +287,8 @@
                         },
                         body: JSON.stringify(payload)
                     });
+                    console.log('API请求已发送，收到响应');
+                    console.log('响应状态:', response.status, response.statusText);
 
                     // 调试响应
                     console.log('API 响应状态:', response.status, response.statusText);
@@ -321,7 +333,12 @@
                     const audioUrl = URL.createObjectURL(audioBlob);
                     audioPlayer.src = audioUrl;
                     audioContainer.classList.remove('hidden'); // 显示播放器
-                    
+                     
+                    // 计算并显示总用时
+                    const endTime = Date.now();
+                    const computeTime = (endTime - startTime) / 1000;
+                    computeTimeDisplay.textContent = `计算用时: ${computeTime.toFixed(2)} 秒`;
+                     
                     // 存储音频URL和时间戳到localStorage
                     storeAudioUrl(audioUrl);
 
