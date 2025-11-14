@@ -347,7 +347,11 @@
                     const endTime = Date.now();
                     const computeTime = (endTime - startTime) / 1000;
                     computeTimeDisplay.textContent = `计算用时: ${computeTime.toFixed(2)} 秒`;
-                     
+                      
+                    // 更新状态为生成成功
+                    statusMsg.textContent = "语音生成成功！";
+                    statusMsg.className = "text-center text-green-500 h-5";
+                      
                     // 存储音频URL和时间戳到localStorage
                     storeAudioUrl(audioUrl);
 
