@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>语音生成</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义Inter字体 (Tailwind默认) */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* 加载中动画 */
+        .loader {
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl space-y-6">
+        
+        <!-- 标题 -->
+        <h1 class="text-2xl font-bold text-center text-gray-800">
+            语音生成
+        </h1>
+
+        <!-- (input) 文本输入 -->
+        <div>
+            <label for="input-text" class="block text-sm font-medium text-gray-700 mb-1">
+                Input (要转换的文本):
+            </label>
+            <textarea id="input-text" rows="5" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" placeholder="请输入要转换为语音的文本..."></textarea>
+            <div class="flex justify-between items-center mt-1">
+                <span id="text-length" class="text-xs text-gray-500">0 字符</span>
+                <span class="text-xs text-gray-500">无字符限制</span>
+            </div>
+        </div>
+
+        <!-- (prompt_audio_url) 提示音频 URL -->
+        <div>
+            <label for="input-prompt-audio-url" class="block text-sm font-medium text-gray-700 mb-1">
+                Prompt Audio (仅支持 URL):
+            </label>
+            <input type="text" id="input-prompt-audio-url" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" placeholder="https://... (必须是可公开访问的 URL)">
+            <p class="text-xs text-gray-500 mt-1">
+                <strong>注意:</strong> 此字段必须是可公开访问的 URL (例如 <code>https://...</code>)。
+                <strong>不支持本地文件上传。</strong> 推荐使用 <code>.wav</code> 格式。
+            </p>
+        </div>
+
+        <!-- (prompt_text) 提示文本 -->
+        <div>
+            <label for="input-prompt-text" class="block text-sm font-medium text-gray-700 mb-1">
+                Prompt Text (可选):
+            </label>
+            <textarea id="input-prompt-text" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" placeholder="提示音频对应的文本..."></textarea>
+        </div>
+        
+        <!-- 生成按钮 -->
+        <button id="generate-btn" class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center justify-center">
+            <span id="btn-text">生成语音</span>
+            <div id="btn-loader" class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-6 w-6 ml-3 hidden"></div>
+        </button>
+        
+        <!-- 等待时间显示 -->
+        <div id="wait-time" class="text-center text-sm text-gray-500 h-5 hidden"></div>
+
+        <!-- 状态/错误消息 -->
+        <div id="status-msg" class="text-center text-red-500 h-5" role="alert"></div>
+
+        <!-- 音频播放器 -->
+        <div id="audio-container" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+                生成结果:
+            </label>
+            <audio id="audio-player" controls class="w-full">
+                <source src="" type="audio/mpeg">
+                您的浏览器不支持 audio 元素。
+            </audio>
+        </div>
+    </div>
+
+    <script>
+        // API 配置
+        let API_KEY = "";
+        const API_URL = "https://ai.gitee.com/v1/audio/speech";
+        const LAST_URL_KEY = "gitee_tts_last_prompt_url";
+        const AUDIO_URLS_KEY = "gitee_tts_audio_urls"; // 存储音频URL和时间戳的键
+        const AUDIO_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24小时，单位：毫秒
+
+        // 尝试从 .env 文件加载 API 密钥
+        async function loadApiKey() {
+            try {
+                const response = await fetch('.env');
+                if (response.ok) {
+                    const content = await response.text();
+                    const match = content.match(/API_KEY=(.+)/);
+                    if (match && match[1]) {
+                        API_KEY = match[1];
+                    }
+                }
+            } catch (error) {
+                console.warn('无法加载 API 密钥:', error);
+                // 如果加载失败，显示错误提示
+                showError("无法加载 API 密钥，请检查 .env 文件是否存在且格式正确");
+            }
+        }
+
+        // --- 初始化 --- (页面加载完成后执行)
+        document.addEventListener('DOMContentLoaded', async () => {
+            // DOM 元素 (在DOM加载完成后获取)
+            const inputText = document.getElementById('input-text');
+            const inputPromptAudioUrl = document.getElementById('input-prompt-audio-url');
+            const inputPromptText = document.getElementById('input-prompt-text');
+
+            const generateBtn = document.getElementById('generate-btn');
+            const btnText = document.getElementById('btn-text');
+            const btnLoader = document.getElementById('btn-loader');
+
+            const statusMsg = document.getElementById('status-msg');
+            const waitTimeDisplay = document.getElementById('wait-time');
+            const audioContainer = document.getElementById('audio-container');
+            const audioPlayer = document.getElementById('audio-player');
+            const textLengthIndicator = document.getElementById('text-length');
+
+            // 检查关键DOM元素是否存在
+            if (!inputText || !textLengthIndicator || !generateBtn) {
+                console.error('关键DOM元素未找到:', {
+                    inputText: !!inputText,
+                    textLengthIndicator: !!textLengthIndicator,
+                    generateBtn: !!generateBtn
+                });
+                return;
+            }
+
+            await loadApiKey();
+
+            // 如果API密钥加载失败，显示错误并禁用生成按钮
+            if (!API_KEY) {
+                showError("无法加载 API 密钥，请检查 .env 文件是否存在且格式正确");
+                generateBtn.disabled = true;
+                generateBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                return;
+            }
+
+            // 添加文本输入事件监听器 (在初始化前添加)
+            inputText.addEventListener('input', updateTextLength);
+
+            // 初始化文本长度指示器
+            updateTextLength();
+
+            // 同时添加其他事件监听器确保实时更新
+            inputText.addEventListener('keyup', updateTextLength);
+            inputText.addEventListener('paste', () => {
+                // 延迟一下，确保粘贴内容已经插入
+                setTimeout(updateTextLength, 10);
+            });
+
+            // 更新文本长度指示器
+            function updateTextLength() {
+                // 确保元素存在
+                if (!inputText || !textLengthIndicator) {
+                    console.warn('文本输入框或长度指示器元素未找到');
+                    return;
+                }
+
+                const length = inputText.value.length;
+                textLengthIndicator.textContent = `${length} 字符`;
+
+                // 根据长度改变颜色 (仅作为参考)
+                if (length > 1000) {
+                    textLengthIndicator.classList.remove('text-gray-500');
+                    textLengthIndicator.classList.add('text-orange-500');
+                } else {
+                    textLengthIndicator.classList.remove('text-orange-500');
+                    textLengthIndicator.classList.add('text-gray-500');
+                }
+
+                console.log(`字符数量已更新: ${length} 字符`); // 调试信息
+            }
+
+            // 加载上次使用的 Prompt URL
+            try {
+                const savedUrl = localStorage.getItem(LAST_URL_KEY);
+                if (savedUrl) {
+                    inputPromptAudioUrl.value = savedUrl;
+                }
+            } catch (e) {
+                console.warn("无法访问 localStorage:", e);
+            }
+
+            // 绑定生成按钮点击事件
+            generateBtn.addEventListener('click', async () => {
+                // 获取输入值
+                let text = inputText.value;
+                const promptAudioUrl = inputPromptAudioUrl.value;
+                const promptText = inputPromptText.value;
+
+                // 简单的校验
+                if (!text || !promptAudioUrl) {
+                    showError("\"要转换的文本\"和\"Prompt Audio URL\"字段不能为空。");
+                    return;
+                }
+
+                // 文本长度提示 (无字符限制，仅作提醒)
+                if (text.length > 2000) {
+                    console.warn(`文本较长 (${text.length} 字符)，生成可能需要更多时间`);
+                }
+
+                // 保存 URL
+                try {
+                    // 调试：保存前检查URL
+                    console.log('保存前的URL:', promptAudioUrl);
+                    localStorage.setItem(LAST_URL_KEY, promptAudioUrl);
+                    // 调试：保存后检查URL
+                    const savedUrl = localStorage.getItem(LAST_URL_KEY);
+                    console.log('保存后的URL:', savedUrl);
+                } catch (e) {
+                    console.warn("无法保存 URL 到 localStorage:", e);
+                }
+
+                // 设置 UI 为加载中
+                setLoading(true);
+                showError(""); // 清除旧错误
+                audioContainer.classList.add('hidden'); // 隐藏旧音频
+                
+                // 开始计时
+                let startTime = Date.now();
+                let timerInterval;
+                
+                // 更新等待时间显示
+                const updateWaitTime = () => {
+                    const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+                    waitTimeDisplay.textContent = `正在生成... 已等待 ${elapsedSeconds} 秒`;
+                };
+                
+                // 显示并开始更新等待时间
+                waitTimeDisplay.classList.remove('hidden');
+                updateWaitTime(); // 立即更新一次
+                timerInterval = setInterval(updateWaitTime, 1000); // 每秒更新一次
+
+                // 构建请求体
+                const payload = {
+                    input: text,
+                    model: "IndexTTS-2", // 硬编码
+                    voice: "alloy", // 硬编码
+                    prompt_audio_url: promptAudioUrl
+                };
+
+            // 如果有 prompt_text，才添加到 payload
+                if (promptText) {
+                    payload.prompt_text = promptText;
+                }
+
+                // 调试：检查URL是否完整
+                console.log('完整的URL:', promptAudioUrl);
+                console.log('URL长度:', promptAudioUrl.length);
+                console.log('URL编码前:', promptAudioUrl);
+                console.log('URL编码后:', encodeURIComponent(promptAudioUrl));
+
+                try {
+                    // 调试信息
+                    console.log('发送 API 请求:', {
+                        url: API_URL,
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${API_KEY}`
+                        },
+                        payload: payload,
+                        payloadLength: JSON.stringify(payload).length
+                    });
+
+                    // 发送 API 请求
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${API_KEY}`
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    // 调试响应
+                    console.log('API 响应状态:', response.status, response.statusText);
+                    console.log('响应头:', [...response.headers.entries()]);
+
+                    // 检查响应状态
+                    if (!response.ok) {
+                        // 尝试读取错误信息
+                        let errorDetails = `状态: ${response.status} ${response.statusText}`;
+                        try {
+                            const errorJson = await response.json();
+                            console.log('错误响应:', errorJson);
+                            errorDetails += ` - ${errorJson.error?.message || '未知错误'}`;
+                        } catch (e) {
+                        // 如果响应体不是 JSON，只显示状态
+                            console.log('无法解析错误响应:', e);
+                        }
+                        throw new Error(`API 请求失败，${errorDetails}。请检查您的输入或 API Key。`);
+                    }
+
+                    // 处理成功的响应 (应该是音频流)
+                    const audioBlob = await response.blob();
+
+                    // 检查返回的MIME类型
+                    if (!audioBlob.type.startsWith('audio/')) {
+                         throw new Error(`API 未返回有效的音频。收到类型: ${audioBlob.type}。请检查 API Key 和输入。`);
+                    }
+
+                    // 创建 Blob URL 并设置给播放器
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioPlayer.src = audioUrl;
+                    audioContainer.classList.remove('hidden'); // 显示播放器
+                    
+                    // 存储音频URL和时间戳到localStorage
+                    storeAudioUrl(audioUrl);
+
+                } catch (error) {
+                    console.error('API 请求出错:', error);
+                    let friendlyError = error.message;
+                    if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+                        friendlyError = "请求失败。这很可能是 CORS 跨域错误。请按 F12 打开开发者控制台查看网络请求。";
+                    }
+                    showError(friendlyError);
+                } finally {
+                    // 停止计时并隐藏等待时间
+                    clearInterval(timerInterval);
+                    waitTimeDisplay.classList.add('hidden');
+                    
+                    // 恢复 UI
+                    setLoading(false);
+                }
+            });
+
+            // --- 辅助函数 ---
+
+            function setLoading(isLoading) {
+                if (isLoading) {
+                    generateBtn.disabled = true;
+                    btnText.classList.add('hidden');
+                    btnLoader.classList.remove('hidden');
+                } else {
+                    generateBtn.disabled = false;
+                    btnText.classList.remove('hidden');
+                    btnLoader.classList.add('hidden');
+                }
+            }
+
+            function showError(message) {
+                statusMsg.textContent = message;
+            }
+            
+            // 存储音频URL和时间戳
+            function storeAudioUrl(audioUrl) {
+                try {
+                    // 获取现有音频URL列表
+                    const audioUrls = JSON.parse(localStorage.getItem(AUDIO_URLS_KEY) || '[]');
+                    
+                    // 添加新的音频URL和时间戳
+                    audioUrls.push({
+                        url: audioUrl,
+                        timestamp: Date.now()
+                    });
+                    
+                    // 保存到localStorage
+                    localStorage.setItem(AUDIO_URLS_KEY, JSON.stringify(audioUrls));
+                } catch (e) {
+                    console.warn("无法存储音频URL:", e);
+                }
+            }
+            
+            // 清理过期的音频URL
+            function cleanupExpiredAudioUrls() {
+                try {
+                    // 获取现有音频URL列表
+                    const audioUrls = JSON.parse(localStorage.getItem(AUDIO_URLS_KEY) || '[]');
+                    const now = Date.now();
+                    const validAudioUrls = [];
+                    
+                    // 遍历检查每个音频URL是否过期
+                    for (const audioItem of audioUrls) {
+                        if (now - audioItem.timestamp < AUDIO_EXPIRY_TIME) {
+                            // 未过期，保留
+                            validAudioUrls.push(audioItem);
+                        } else {
+                            // 已过期，释放URL对象并从列表中移除
+                            try {
+                                URL.revokeObjectURL(audioItem.url);
+                                console.log('已清理过期音频URL:', audioItem.url);
+                            } catch (e) {
+                                console.warn('清理音频URL失败:', e);
+                            }
+                        }
+                    }
+                    
+                    // 保存有效音频URL列表
+                    localStorage.setItem(AUDIO_URLS_KEY, JSON.stringify(validAudioUrls));
+                } catch (e) {
+                    console.warn("清理过期音频URL失败:", e);
+                }
+            }
+            
+            // 初始化时检查并清理过期音频URL
+            cleanupExpiredAudioUrls();
+            
+            // 设置定期清理任务（每小时执行一次）
+            setInterval(cleanupExpiredAudioUrls, 60 * 60 * 1000);
+
+        }); // 关闭 DOMContentLoaded 事件监听器
+
+    </script>
+</body>
+</html>
