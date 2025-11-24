@@ -95,18 +95,19 @@
 
     <script>
         // API 配置
-        let API_KEY = "ZZIGSINNUET0SIPCUUWGOIIZEFEDVU3QHH0V5Q1D"; // 直接嵌入API密钥
-        const API_URL = "https://ai.gitee.com/v1/audio/speech";
-        console.log('API配置:', { API_URL, API_KEY: API_KEY ? '***' : '未设置' });
+        let API_KEY = "";
+        const DEFAULT_API_URL = "https://ai.gitee.com/v1/audio/speech";
+        const params = new URLSearchParams(window.location.search);
+        const apiParam = params.get("api") || "";
+        if (apiParam) { try { localStorage.setItem("API_URL_OVERRIDE", apiParam); } catch (e) {} }
+        const API_URL_OVERRIDE = apiParam || localStorage.getItem("API_URL_OVERRIDE") || "";
+        const API_URL = API_URL_OVERRIDE || DEFAULT_API_URL;
         const LAST_URL_KEY = "gitee_tts_last_prompt_url";
         const AUDIO_URLS_KEY = "gitee_tts_audio_urls"; // 存储音频URL和时间戳的键
         const AUDIO_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24小时，单位：毫秒
 
-        // 加载API密钥（直接使用嵌入的密钥）
-        async function loadApiKey() {
-            // 直接使用已嵌入的API密钥
-            console.log('使用嵌入的API密钥');
-        }
+        // 加载API密钥（留空，使用后端代理注入）
+        async function loadApiKey() {}
 
         // --- 初始化 --- (页面加载完成后执行)
         document.addEventListener('DOMContentLoaded', async () => {
@@ -140,12 +141,8 @@
 
             await loadApiKey();
 
-            // 如果API密钥加载失败，显示错误并禁用生成按钮
-            if (!API_KEY) {
-                showError("无法加载 API 密钥，请检查 .env 文件是否存在且格式正确");
-                generateBtn.disabled = true;
-                generateBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                return;
+            if (!API_KEY && API_URL === DEFAULT_API_URL) {
+                showError("请配置代理地址或在服务端注入密钥");
             }
 
             // 添加文本输入事件监听器 (在初始化前添加)
@@ -269,13 +266,12 @@
                     console.log('API_KEY长度:', API_KEY ? API_KEY.length : 0);
                     
                     // 调试信息
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (API_KEY) { headers['Authorization'] = `Bearer ${API_KEY}`; }
                     console.log('准备发送 API 请求:', {
                         url: API_URL,
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${API_KEY}`
-                        },
+                        headers,
                         payload: payload,
                         payloadLength: JSON.stringify(payload).length
                     });
@@ -284,10 +280,7 @@
                     console.log('正在发送API请求...');
                     const response = await fetch(API_URL, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${API_KEY}`
-                        },
+                        headers,
                         body: JSON.stringify(payload)
                     });
                     console.log('API请求已发送，收到响应');
