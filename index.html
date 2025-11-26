@@ -101,7 +101,8 @@
         const apiParam = params.get("api") || "";
         if (apiParam) { try { localStorage.setItem("API_URL_OVERRIDE", apiParam); } catch (e) {} }
         const API_URL_OVERRIDE = apiParam || localStorage.getItem("API_URL_OVERRIDE") || "";
-        const API_URL = API_URL_OVERRIDE || DEFAULT_API_URL;
+        const PROD_DEFAULT_API_URL = (location.hostname.endsWith('github.io') ? 'https://old-hat-f15f.qqa199388.workers.dev/audio/speech' : DEFAULT_API_URL);
+        const API_URL = API_URL_OVERRIDE || PROD_DEFAULT_API_URL;
         const LAST_URL_KEY = "gitee_tts_last_prompt_url";
         const AUDIO_URLS_KEY = "gitee_tts_audio_urls"; // 存储音频URL和时间戳的键
         const AUDIO_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24小时，单位：毫秒
