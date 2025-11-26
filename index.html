@@ -73,6 +73,14 @@
             <textarea id="input-prompt-text" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" placeholder="提示音频对应的文本..."></textarea>
         </div>
         
+        <!-- (remark) 备注 -->
+        <div>
+            <label for="input-remark" class="block text-sm font-medium text-gray-700 mb-1">
+                备注 (可选):
+            </label>
+            <input type="text" id="input-remark" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" placeholder="为此任务添加备注...">
+        </div>
+        
         <!-- 生成按钮 -->
         <button id="generate-btn" class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center justify-center">
             <span id="btn-text">生成语音</span>
@@ -108,11 +116,23 @@
 
     <aside id="task-sidebar" class="hidden fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 transform translate-x-full transition-transform duration-300 flex flex-col">
         <!-- 侧边栏头部 -->
-        <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-            <h2 class="text-lg font-bold text-gray-800">📜 任务历史</h2>
-            <button onclick="document.getElementById('task-sidebar').classList.add('translate-x-full'); setTimeout(()=>document.getElementById('task-sidebar').classList.add('hidden'), 300)" class="text-gray-500 hover:text-gray-700">
-                ✖️
-            </button>
+        <div class="p-4 border-b border-gray-200 bg-gray-50">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-lg font-bold text-gray-800">📜 任务历史</h2>
+                <button onclick="document.getElementById('task-sidebar').classList.add('translate-x-full'); setTimeout(()=>document.getElementById('task-sidebar').classList.add('hidden'), 300)" class="text-gray-500 hover:text-gray-700">
+                    ✖️
+                </button>
+            </div>
+            <!-- 批量操作工具栏 -->
+            <div class="flex items-center justify-between text-xs">
+                <label class="flex items-center space-x-1 cursor-pointer">
+                    <input type="checkbox" id="select-all-tasks" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    <span class="text-gray-600">全选</span>
+                </label>
+                <button id="bulk-delete-btn" class="text-red-600 hover:text-red-800 disabled:text-gray-300 disabled:cursor-not-allowed" disabled>
+                    🗑️ 批量删除
+                </button>
+            </div>
         </div>
         
         <!-- 任务列表容器 -->
@@ -153,7 +173,7 @@
         const apiParam = params.get("api") || "";
         if (apiParam) { try { localStorage.setItem("API_URL_OVERRIDE", apiParam); } catch (e) {} }
         const API_URL_OVERRIDE = apiParam || localStorage.getItem("API_URL_OVERRIDE") || "";
-        const PROD_DEFAULT_API_URL = (location.hostname.endsWith('github.io') ? 'https://old-hat-f15f.qqa199388.workers.dev/audio/speech' : DEFAULT_API_URL);
+        const PROD_DEFAULT_API_URL = (location.hostname.endsWith('github.io') || location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'https://old-hat-f15f.qqa199388.workers.dev/audio/speech' : DEFAULT_API_URL);
         const API_URL = API_URL_OVERRIDE || PROD_DEFAULT_API_URL;
         const LAST_URL_KEY = "gitee_tts_last_prompt_url";
         const AUDIO_URLS_KEY = "gitee_tts_audio_urls"; // 存储音频URL和时间戳的键
@@ -193,6 +213,9 @@
             }
 
             await loadApiKey();
+
+            // 轮询管理 map (提前初始化)
+            const activePolls = new Set();
 
             // v1.1 DB 初始化与 UI 渲染
             if (window.CURRENT_VERSION === '1.1') {
@@ -333,7 +356,7 @@
 
                 // 构建请求体
                 const payload = {
-                    inputs: text,
+                    input: text,
                     model: "IndexTTS-2", // 硬编码
                     voice: "alloy", // 硬编码
                     prompt_audio_url: promptAudioUrl
@@ -415,6 +438,7 @@
                 let text = inputText.value;
                 const promptAudioUrl = inputPromptAudioUrl.value;
                 const promptText = inputPromptText.value;
+                const remark = document.getElementById('input-remark').value; // 获取备注
 
                 if (!text || !promptAudioUrl) {
                     showError("\"要转换的文本\"和\"Prompt Audio URL\"字段不能为空。");
@@ -450,7 +474,7 @@
                         prompt_text: promptText, // 保存 prompt text
                         text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
                         prompt_audio: promptAudioUrl,
-                        remark: '', // 默认空备注
+                        remark: remark || '', // 使用用户输入的备注
                         status: 'pending',
                         created_at: Date.now(),
                         audio_blob: null,
@@ -520,8 +544,7 @@
                 return result;
             }
 
-            // 轮询管理 map
-            const activePolls = new Set();
+            // 轮询管理 map (已移至顶部)
 
             async function startPolling(taskId, upstreamPollUrl) {
                 if (activePolls.has(taskId)) return;
@@ -701,18 +724,33 @@
                         // 构建 HTML
                         let controlsHtml = '';
                         if (task.status === 'success' && task.audio_blob) {
-                            // 动态生成 URL
-                            const audioUrl = URL.createObjectURL(task.audio_blob);
-                            controlsHtml = `
-                                <div class="mt-2 space-y-2">
-                                    <audio controls class="w-full h-8" src="${audioUrl}" preload="metadata"></audio>
-                                    <a href="${audioUrl}" download="speech-${task.id}.mp3" class="block text-center text-xs text-blue-600 hover:underline">⬇️ 下载音频</a>
-                                </div>
-                            `;
+                            // 动态生成 URL (增加安全检查)
+                            if (task.audio_blob instanceof Blob) {
+                                if (task.audio_blob.size > 0) {
+                                    try {
+                                        const audioUrl = URL.createObjectURL(task.audio_blob);
+                                        controlsHtml = `
+                                            <div class="mt-2 space-y-2">
+                                                <audio controls class="w-full h-8" src="${audioUrl}" preload="metadata"></audio>
+                                                <a href="${audioUrl}" download="speech-${task.id}.mp3" class="block text-center text-xs text-blue-600 hover:underline">⬇️ 下载音频</a>
+                                            </div>
+                                        `;
+                                    } catch (e) {
+                                        console.error("Create object URL failed:", e);
+                                        controlsHtml = `<div class="mt-2 text-xs text-red-500">音频数据加载失败</div>`;
+                                    }
+                                } else {
+                                    console.warn("Empty audio blob (size 0):", task.audio_blob);
+                                    controlsHtml = `<div class="mt-2 text-xs text-red-500">音频数据为空 (0 bytes)</div>`;
+                                }
+                            } else {
+                                console.warn("Invalid audio blob:", task.audio_blob);
+                                controlsHtml = `<div class="mt-2 text-xs text-red-500">无效的音频数据</div>`;
+                            }
                         } else if (task.status === 'pending' || task.status === 'running') {
-                             // 计算耗时
+                             // 计算耗时 (添加 dynamic-timer 类以便后续 JS 动态更新)
                              const elapsed = Math.floor((Date.now() - task.created_at) / 1000);
-                             controlsHtml = `<div class="mt-2 text-xs text-gray-500 text-center">已耗时: ${elapsed}s</div>`;
+                             controlsHtml = `<div class="mt-2 text-xs text-gray-500 text-center dynamic-timer" data-start-time="${task.created_at}">已耗时: ${elapsed}s</div>`;
                         }
 
                         // 重新生成按钮 (所有状态都显示，方便重试或再次生成)
@@ -724,8 +762,16 @@
 
                         card.innerHTML = `
                             <div class="flex justify-between items-center mb-2">
-                                <span class="${statusClass} font-bold text-sm">${statusIcon} ${statusText}</span>
-                                <span class="text-xs text-gray-400">${timeStr}</span>
+                                <div class="flex items-center">
+                                    <input type="checkbox" class="task-checkbox mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500" value="${task.id}" onchange="window.updateBulkDeleteState()">
+                                    <span class="${statusClass} font-bold text-sm">${statusIcon} ${statusText}</span>
+                                </div>
+                                <div class="flex items-center">
+                                    <span class="text-xs text-gray-400 mr-2">${timeStr}</span>
+                                    <button onclick="window.deleteTask('${task.id}')" class="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50" title="删除任务">
+                                        🗑️
+                                    </button>
+                                </div>
                             </div>
                             <div class="flex justify-between items-start mb-2">
                                 <div class="text-xs text-gray-700 break-words line-clamp-2 flex-1 mr-2" title="${task.text_preview || ''}">
@@ -899,6 +945,90 @@
             
             // 设置定期清理任务（每小时执行一次）
             setInterval(cleanupExpiredAudioUrls, 60 * 60 * 1000);
+
+            // 全局定时器：更新任务列表中的动态计时器
+            setInterval(() => {
+                const timers = document.querySelectorAll('.dynamic-timer');
+                timers.forEach(timer => {
+                    const startTime = parseInt(timer.getAttribute('data-start-time'));
+                    if (startTime) {
+                        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                        timer.textContent = `已耗时: ${elapsed}s`;
+                    }
+                });
+            }, 1000);
+
+            // 暴露给全局的删除函数
+            window.deleteTask = async (taskId) => {
+                if (!confirm('确定要删除这条任务记录吗？(不会删除服务端数据)')) return;
+                try {
+                    if (window.dbLayer) {
+                        await window.dbLayer.deleteTask(taskId);
+                        await renderTaskList();
+                        window.updateBulkDeleteState();
+                    }
+                } catch (e) {
+                    console.error("Delete failed:", e);
+                    alert("删除失败: " + e.message);
+                }
+            };
+
+            // 批量删除状态更新
+            window.updateBulkDeleteState = () => {
+                const checkboxes = document.querySelectorAll('.task-checkbox');
+                const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+                const btn = document.getElementById('bulk-delete-btn');
+                const selectAll = document.getElementById('select-all-tasks');
+                
+                if (btn) btn.disabled = checkedCount === 0;
+                
+                if (selectAll) {
+                    selectAll.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+                    selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+                }
+            };
+
+            // 绑定批量操作事件
+            const selectAllCheckbox = document.getElementById('select-all-tasks');
+            const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+            
+            if (selectAllCheckbox) {
+                selectAllCheckbox.addEventListener('change', (e) => {
+                    const checked = e.target.checked;
+                    document.querySelectorAll('.task-checkbox').forEach(cb => {
+                        cb.checked = checked;
+                    });
+                    window.updateBulkDeleteState();
+                });
+            }
+            
+            if (bulkDeleteBtn) {
+                bulkDeleteBtn.addEventListener('click', async () => {
+                    const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+                    if (checkedBoxes.length === 0) return;
+                    
+                    if (!confirm(`确定要删除选中的 ${checkedBoxes.length} 条任务吗？`)) return;
+                    
+                    try {
+                        const ids = Array.from(checkedBoxes).map(cb => cb.value);
+                        if (window.dbLayer) {
+                            for (const id of ids) {
+                                await window.dbLayer.deleteTask(id);
+                            }
+                            await renderTaskList();
+                            // 重置全选状态
+                            if (selectAllCheckbox) {
+                                selectAllCheckbox.checked = false;
+                                selectAllCheckbox.indeterminate = false;
+                            }
+                            window.updateBulkDeleteState();
+                        }
+                    } catch (e) {
+                        console.error("Bulk delete failed:", e);
+                        alert("批量删除部分失败: " + e.message);
+                    }
+                });
+            }
 
         }); // 关闭 DOMContentLoaded 事件监听器
 
