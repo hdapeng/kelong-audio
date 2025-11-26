@@ -30,13 +30,17 @@ export default {
         targetUrl = 'https://ai.gitee.com/v1/async/audio/speech';
     } 
     // 2. 任务查询接口 (v1.1)
-    else if (path.includes('/task/') && method === 'GET') {
-        // 提取 taskId。假设路径格式为 /task/{taskId} 或 /v1/task/{taskId}
-        // 简单匹配：取最后一个斜杠后的部分
+    else if ((path.includes('/task/') || path.includes('/tasks/')) && method === 'GET') {
+        // 提取 taskId。支持 /task/{id} 和 /tasks/{id}
         const parts = path.split('/');
         const taskId = parts[parts.length - 1];
+        
+        // 判断是 singular 还是 plural，以便正确转发
+        // 如果路径包含 /tasks/，则上游也用 /tasks/，否则用 /task/
+        const resource = path.includes('/tasks/') ? 'tasks' : 'task';
+        
         if (taskId) {
-            targetUrl = `https://ai.gitee.com/v1/task/${taskId}`;
+            targetUrl = `https://ai.gitee.com/v1/${resource}/${taskId}`;
         }
     } 
     // 3. 同步生成接口 (v1.0 & 默认)

@@ -432,8 +432,11 @@
 
                 try {
                     // 4. 提交任务
-                    const taskId = await submitAsyncTask(payload);
-                    console.log("Task submitted, ID:", taskId);
+                    const responseData = await submitAsyncTask(payload);
+                    const taskId = responseData.task_id || responseData.id;
+                    const upstreamPollUrl = responseData.urls?.get;
+
+                    console.log("Task submitted, ID:", taskId, "Poll URL:", upstreamPollUrl);
 
                     // 5. 存入 DB
                     const newTask = {
@@ -457,7 +460,7 @@
                     }
 
                     // 6. 启动轮询
-                    startPolling(taskId);
+                    startPolling(taskId, upstreamPollUrl);
                     
                     // 7. 更新 UI
                     renderTaskList();
@@ -508,20 +511,43 @@
 
                 const result = await response.json();
                 // 假设返回结构 { task_id: "..." }
-                if (!result.task_id) {
+                if (!result.task_id && !result.id) {
                     throw new Error("Invalid response: missing task_id");
                 }
-                return result.task_id;
+                return result;
             }
 
             // 轮询管理 map
             const activePolls = new Set();
 
-            async function startPolling(taskId) {
+            async function startPolling(taskId, upstreamPollUrl) {
                 if (activePolls.has(taskId)) return;
                 activePolls.add(taskId);
 
-                const pollUrl = API_URL.replace('/audio/speech', `/task/${taskId}`);
+                let pollUrl = API_URL.replace('/audio/speech', `/task/${taskId}`);
+                
+                // 如果服务端返回了查询URL，尝试使用它 (需适配 worker 代理)
+                if (upstreamPollUrl) {
+                    try {
+                        const urlObj = new URL(upstreamPollUrl);
+                        // 提取 path，例如 /v1/tasks/123 或 /api/v1/task/123
+                        // 我们的 worker 支持 /task/xxx 和 /tasks/xxx
+                        // 假设 worker 部署在 API_URL 所在域
+                        // 提取 /task/... 或 /tasks/...
+                        const match = urlObj.pathname.match(/\/(tasks?\/.*)$/);
+                        if (match) {
+                            // 构造新的 pollUrl: WorkerBase + / + match[1]
+                            // API_URL 类似 https://.../audio/speech
+                            // WorkerBase 类似 https://...
+                            const workerBase = API_URL.replace(/\/audio\/speech\/?$/, '');
+                            pollUrl = `${workerBase}/${match[1]}`;
+                            console.log('Using dynamic poll URL:', pollUrl);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse upstream poll URL, using default:', e);
+                    }
+                }
+
                 const maxAttempts = 60; // 10分钟 (10s * 60)
                 let attempts = 0;
 
