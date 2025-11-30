@@ -216,6 +216,7 @@
 
             // 轮询管理 map (提前初始化)
             const activePolls = new Set();
+            window.lastSubmittedTaskId = null;
 
             // v1.1 DB 初始化与 UI 渲染
             if (window.CURRENT_VERSION === '1.1') {
@@ -465,6 +466,7 @@
                     const upstreamPollUrl = responseData.urls?.get;
 
                     console.log("Task submitted, ID:", taskId, "Poll URL:", upstreamPollUrl);
+                    window.lastSubmittedTaskId = taskId;
 
                     // 5. 存入 DB
                     const newTask = {
@@ -550,6 +552,22 @@
                 if (activePolls.has(taskId)) return;
                 activePolls.add(taskId);
 
+                const markFailed = async (reason) => {
+                    activePolls.delete(taskId);
+                    if (window.dbLayer) {
+                        const tasks = await window.dbLayer.getTasks();
+                        const existing = tasks.find(t => t.id === taskId);
+                        if (existing) {
+                            existing.status = 'failed';
+                            await window.dbLayer.saveTask(existing);
+                        }
+                    }
+                    renderTaskList();
+                    if (window.lastSubmittedTaskId === taskId) {
+                        showError("任务失败: " + (reason || "未知错误"));
+                    }
+                };
+
                 let pollUrl = API_URL.replace('/audio/speech', `/task/${taskId}`);
                 
                 // 如果服务端返回了查询URL，尝试使用它 (需适配 worker 代理)
@@ -605,6 +623,10 @@
                                 // Gitee 返回的 file_url 通常是 OSS 地址，可能需要代理
                                 // 这里先尝试直接 fetch
                                 const audioRes = await fetch(fileUrl);
+                                if (!audioRes.ok) {
+                                    await markFailed("音频下载失败 HTTP " + audioRes.status);
+                                    return;
+                                }
                                 audioBlob = await audioRes.blob();
                             }
 
@@ -634,17 +656,7 @@
                             // 如果是当前刚刚提交的任务，也可以直接显示在主播放器 (可选优化)
 
                         } else if (status === 'failed' || status === 'cancelled') {
-                            activePolls.delete(taskId);
-                            // 更新 DB
-                            if (window.dbLayer) {
-                                const tasks = await window.dbLayer.getTasks();
-                                const existing = tasks.find(t => t.id === taskId);
-                                if (existing) {
-                                    existing.status = 'failed';
-                                    await window.dbLayer.saveTask(existing);
-                                }
-                            }
-                            renderTaskList();
+                            await markFailed("服务端返回失败");
                         } else {
                             // 继续轮询
                             if (attempts < maxAttempts) {
