@@ -302,6 +302,15 @@
                 console.warn("无法访问 localStorage:", e);
             }
 
+            try {
+                const savePromptUrl = () => {
+                    const val = inputPromptAudioUrl.value || '';
+                    localStorage.setItem(LAST_URL_KEY, val);
+                };
+                inputPromptAudioUrl.addEventListener('change', savePromptUrl);
+                inputPromptAudioUrl.addEventListener('blur', savePromptUrl);
+            } catch (e) {}
+
             // 绑定生成按钮点击事件
             console.log('生成按钮事件监听器已绑定');
             generateBtn.addEventListener('click', async () => {
@@ -454,6 +463,8 @@
                     prompt_audio_url: promptAudioUrl
                 };
                 if (promptText) payload.prompt_text = promptText;
+
+                try { localStorage.setItem(LAST_URL_KEY, promptAudioUrl); } catch (e) {}
 
                 // 3. UI 反馈
                 setLoading(true);
