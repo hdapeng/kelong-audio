@@ -235,7 +235,7 @@
                         const tasks = await window.dbLayer.getTasks();
                         let resumeCount = 0;
                         for (const task of tasks) {
-                            if (task.status === 'pending' || task.status === 'running') {
+                            if (task.status === 'pending' || task.status === 'running' || task.status === 'in_progress') {
                                 // 检查任务是否过期太久，避免无限轮询旧任务
                                 // 假设超过 30 分钟的任务可能已经不再需要高频轮询，或者已经被服务端丢弃
                                 // 但根据需求，我们还是尝试恢复轮询，startPolling 内部有超时机制
@@ -576,6 +576,8 @@
                     renderTaskList();
                     if (window.lastSubmittedTaskId === taskId) {
                         showError("任务失败: " + (reason || "未知错误"));
+                        setLoading(false);
+                        if (btnStatusText) { btnStatusText.textContent = "任务失败"; }
                     }
                 };
 
@@ -666,7 +668,7 @@
                             
                             // 如果是当前刚刚提交的任务，也可以直接显示在主播放器 (可选优化)
 
-                        } else if (status === 'failed' || status === 'cancelled') {
+                        } else if (status === 'failed' || status === 'failure' || status === 'cancelled') {
                             await markFailed("服务端返回失败");
                         } else {
                             // 继续轮询
