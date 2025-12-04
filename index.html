@@ -558,28 +558,14 @@
             }
 
             // 轮询管理 map (已移至顶部)
+            const TIMEOUT_SECONDS = 600;
 
             async function startPolling(taskId, upstreamPollUrl) {
                 if (activePolls.has(taskId)) return;
                 activePolls.add(taskId);
+                let startedAtMs = null;
 
-                const markFailed = async (reason) => {
-                    activePolls.delete(taskId);
-                    if (window.dbLayer) {
-                        const tasks = await window.dbLayer.getTasks();
-                        const existing = tasks.find(t => t.id === taskId);
-                        if (existing) {
-                            existing.status = 'failed';
-                            await window.dbLayer.saveTask(existing);
-                        }
-                    }
-                    renderTaskList();
-                    if (window.lastSubmittedTaskId === taskId) {
-                        showError("任务失败: " + (reason || "未知错误"));
-                        setLoading(false);
-                        if (btnStatusText) { btnStatusText.textContent = "任务失败"; }
-                    }
-                };
+                // 使用全局 markFailed(taskId, reason)
 
                 let pollUrl = API_URL.replace('/audio/speech', `/task/${taskId}`);
                 
@@ -610,6 +596,31 @@
 
                 const poll = async () => {
                     if (!activePolls.has(taskId)) return; // 停止轮询
+                    // 解析任务起始时间（一次性）
+                    if (startedAtMs == null) {
+                        try {
+                            if (window.dbLayer) {
+                                const tasks = await window.dbLayer.getTasks();
+                                const existing = tasks.find(t => t.id === taskId);
+                                if (existing) {
+                                    startedAtMs = existing.started_at || existing.created_at || Date.now();
+                                } else {
+                                    startedAtMs = Date.now();
+                                }
+                            } else {
+                                startedAtMs = Date.now();
+                            }
+                        } catch (e) {
+                            startedAtMs = Date.now();
+                        }
+                    }
+
+                    // 超时控制：超过 600 秒直接标记失败并停止
+                    if (Date.now() - startedAtMs > TIMEOUT_SECONDS * 1000) {
+                        await markFailed(taskId, "生成超时（>600秒），请重新生成");
+                        return;
+                    }
+
                     attempts++;
                     
                     try {
@@ -637,7 +648,7 @@
                                 // 这里先尝试直接 fetch
                                 const audioRes = await fetch(fileUrl);
                                 if (!audioRes.ok) {
-                                    await markFailed("音频下载失败 HTTP " + audioRes.status);
+                                    await markFailed(taskId, "音频下载失败 HTTP " + audioRes.status);
                                     return;
                                 }
                                 audioBlob = await audioRes.blob();
@@ -669,7 +680,7 @@
                             // 如果是当前刚刚提交的任务，也可以直接显示在主播放器 (可选优化)
 
                         } else if (status === 'failed' || status === 'failure' || status === 'cancelled') {
-                            await markFailed("服务端返回失败");
+                            await markFailed(taskId, "服务端返回失败");
                         } else {
                             // 继续轮询
                             if (attempts < maxAttempts) {
@@ -749,15 +760,17 @@
                         // 构建 HTML
                         let controlsHtml = '';
                         if (task.status === 'success' && task.audio_blob) {
-                            // 动态生成 URL (增加安全检查)
                             if (task.audio_blob instanceof Blob) {
                                 if (task.audio_blob.size > 0) {
                                     try {
                                         const audioUrl = URL.createObjectURL(task.audio_blob);
+                                        const ext = getAudioExt(task.audio_blob.type);
+                                        const safeName = sanitizeRemark(task.remark);
+                                        const downloadName = `${safeName || 'speech-' + task.id}${ext}`;
                                         controlsHtml = `
                                             <div class="mt-2 space-y-2">
                                                 <audio controls class="w-full h-8" src="${audioUrl}" preload="metadata"></audio>
-                                                <a href="${audioUrl}" download="speech-${task.id}.mp3" class="block text-center text-xs text-blue-600 hover:underline">⬇️ 下载音频</a>
+                                                <a href="${audioUrl}" download="${downloadName}" class="block text-center text-xs text-blue-600 hover:underline">⬇️ 下载音频</a>
                                             </div>
                                         `;
                                     } catch (e) {
@@ -914,7 +927,44 @@
                 statusMsg.textContent = message;
                 statusMsg.className = "text-center text-red-500 h-5";
             }
+            async function markFailed(taskId, reason) {
+                try {
+                    activePolls.delete(taskId);
+                    if (window.dbLayer) {
+                        const tasks = await window.dbLayer.getTasks();
+                        const existing = tasks.find(t => t.id === taskId);
+                        if (existing) {
+                            existing.status = 'failed';
+                            await window.dbLayer.saveTask(existing);
+                        }
+                    }
+                    renderTaskList();
+                    if (window.lastSubmittedTaskId === taskId) {
+                        showError("任务失败: " + (reason || "未知错误"));
+                        setLoading(false);
+                        if (btnStatusText) { btnStatusText.textContent = "任务失败"; }
+                    }
+                } catch (e) {
+                    console.error('markFailed error:', e);
+                }
+            }
             
+            function sanitizeRemark(remark) {
+                if (typeof remark !== 'string') return null;
+                let s = remark.trim();
+                s = s.replace(/[\x00-\x1F]/g, '');
+                s = s.replace(/[\\\/:*?"<>|]/g, '-');
+                s = s.replace(/\s+/g, ' ');
+                if (!s) return null;
+                if (s.length > 64) s = s.slice(0, 64);
+                return s;
+            }
+
+            function getAudioExt(blobType) {
+                if (typeof blobType === 'string' && blobType.toLowerCase().includes('wav')) return '.wav';
+                return '.mp3';
+            }
+
             // 存储音频URL和时间戳
             function storeAudioUrl(audioUrl) {
                 try {
