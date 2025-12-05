@@ -569,30 +569,20 @@
 
                 let pollUrl = API_URL.replace('/audio/speech', `/task/${taskId}`);
                 
-                // 如果服务端返回了查询URL，尝试使用它 (需适配 worker 代理)
                 if (upstreamPollUrl) {
                     try {
                         const urlObj = new URL(upstreamPollUrl);
-                        // 提取 path，例如 /v1/tasks/123 或 /api/v1/task/123
-                        // 我们的 worker 支持 /task/xxx 和 /tasks/xxx
-                        // 假设 worker 部署在 API_URL 所在域
-                        // 提取 /task/... 或 /tasks/...
-                        const match = urlObj.pathname.match(/\/(tasks?\/.*)$/);
-                        if (match) {
-                            // 构造新的 pollUrl: WorkerBase + / + match[1]
-                            // API_URL 类似 https://.../audio/speech
-                            // WorkerBase 类似 https://...
+                        const idMatch = urlObj.pathname.match(/\/tasks?\/([^/]+)/);
+                        if (idMatch && idMatch[1]) {
                             const workerBase = API_URL.replace(/\/audio\/speech\/?$/, '');
-                            pollUrl = `${workerBase}/${match[1]}`;
-                            console.log('Using dynamic poll URL:', pollUrl);
+                            pollUrl = `${workerBase}/task/${idMatch[1]}`;
                         }
-                    } catch (e) {
-                        console.warn('Failed to parse upstream poll URL, using default:', e);
-                    }
+                    } catch (e) {}
                 }
 
-                const maxAttempts = 60; // 10分钟 (10s * 60)
+                const maxAttempts = 60;
                 let attempts = 0;
+                let badRequestCount = 0;
 
                 const poll = async () => {
                     if (!activePolls.has(taskId)) return; // 停止轮询
@@ -625,9 +615,19 @@
                     
                     try {
                         console.log(`Polling task ${taskId}, attempt ${attempts}`);
-                        const response = await fetch(pollUrl); // worker 会转发 /task/{id}
-                        
-                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const pollHeaders = {};
+                        if (API_KEY) { pollHeaders['Authorization'] = `Bearer ${API_KEY}`; }
+                        const response = await fetch(pollUrl, { headers: pollHeaders });
+                        if (!response.ok) {
+                            if (response.status === 400) {
+                                badRequestCount++;
+                                if (badRequestCount >= 3) {
+                                    await markFailed(taskId, "任务查询接口返回 400（路径或鉴权问题）");
+                                    return;
+                                }
+                            }
+                            throw new Error(`HTTP ${response.status}`);
+                        }
                         
                         const result = await response.json();
                         const status = result.status; // success, failed, running?
