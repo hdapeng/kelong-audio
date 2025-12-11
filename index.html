@@ -882,6 +882,8 @@
                     if (task.full_text) document.getElementById('input-text').value = task.full_text;
                     if (task.prompt_audio) document.getElementById('input-prompt-audio-url').value = task.prompt_audio;
                     if (task.prompt_text) document.getElementById('input-prompt-text').value = task.prompt_text;
+                    const remarkInput = document.getElementById('input-remark');
+                    if (remarkInput) remarkInput.value = task.remark || '';
                     
                     // 提示用户
                     const btn = document.getElementById('generate-btn');
