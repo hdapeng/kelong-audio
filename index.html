@@ -588,6 +588,7 @@
                 const maxAttempts = 60;
                 let attempts = 0;
                 let badRequestCount = 0;
+                let notFoundCount = 0;
 
                 const poll = async () => {
                     if (!activePolls.has(taskId)) return; // 停止轮询
@@ -624,18 +625,28 @@
                         if (API_KEY) { pollHeaders['Authorization'] = `Bearer ${API_KEY}`; }
                         const response = await fetch(pollUrl, { headers: pollHeaders });
                         if (!response.ok) {
-                            if (response.status === 400) {
-                                badRequestCount++;
+                            if (response.status === 400 || response.status === 404) {
                                 if (!toggledRoute) {
                                     pollUrl = (pollUrl === pollUrlSingular) ? pollUrlPlural : pollUrlSingular;
                                     toggledRoute = true;
                                     badRequestCount = 0;
+                                    notFoundCount = 0;
                                     setTimeout(poll, 2000);
                                     return;
                                 }
-                                if (badRequestCount >= 3) {
-                                    await markFailed(taskId, "任务查询接口返回 400（路径或鉴权问题）");
-                                    return;
+                                if (response.status === 400) {
+                                    badRequestCount++;
+                                    if (badRequestCount >= 3) {
+                                        await markFailed(taskId, "任务查询接口返回 400（路径或鉴权问题）");
+                                        return;
+                                    }
+                                }
+                                if (response.status === 404) {
+                                    notFoundCount++;
+                                    if (notFoundCount >= 3) {
+                                        await markFailed(taskId, "任务查询接口返回 404（任务不存在或路径错误）");
+                                        return;
+                                    }
                                 }
                             }
                             throw new Error(`HTTP ${response.status}`);
