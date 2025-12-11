@@ -31,14 +31,9 @@ export default {
     } 
     // 2. 任务查询接口 (v1.1)
     else if ((path.includes('/task/') || path.includes('/tasks/')) && method === 'GET') {
-        // 提取 taskId。支持 /task/{id} 和 /tasks/{id}
         const parts = path.split('/');
         const taskId = parts[parts.length - 1];
-        
-        // 判断是 singular 还是 plural，以便正确转发
-        // 如果路径包含 /tasks/，则上游也用 /tasks/，否则用 /task/
-        const resource = path.includes('/tasks/') ? 'tasks' : 'task';
-        
+        const resource = 'tasks';
         if (taskId) {
             targetUrl = `https://ai.gitee.com/v1/${resource}/${taskId}`;
         }
