@@ -567,18 +567,23 @@
 
                 // 使用全局 markFailed(taskId, reason)
 
-                let pollUrl = API_URL.replace('/audio/speech', `/task/${taskId}`);
-                
+                const workerBase = API_URL.replace(/\/audio\/speech\/?$/, '');
+                let pollId = taskId;
+                let preferPlural = false;
                 if (upstreamPollUrl) {
                     try {
                         const urlObj = new URL(upstreamPollUrl);
                         const idMatch = urlObj.pathname.match(/\/tasks?\/([^/]+)/);
                         if (idMatch && idMatch[1]) {
-                            const workerBase = API_URL.replace(/\/audio\/speech\/?$/, '');
-                            pollUrl = `${workerBase}/task/${idMatch[1]}`;
+                            pollId = idMatch[1];
+                            preferPlural = /\/tasks\//.test(urlObj.pathname);
                         }
                     } catch (e) {}
                 }
+                const pollUrlSingular = `${workerBase}/task/${pollId}`;
+                const pollUrlPlural = `${workerBase}/tasks/${pollId}`;
+                let pollUrl = preferPlural ? pollUrlPlural : pollUrlSingular;
+                let toggledRoute = false;
 
                 const maxAttempts = 60;
                 let attempts = 0;
@@ -615,12 +620,19 @@
                     
                     try {
                         console.log(`Polling task ${taskId}, attempt ${attempts}`);
-                        const pollHeaders = {};
+                        const pollHeaders = { 'Accept': 'application/json' };
                         if (API_KEY) { pollHeaders['Authorization'] = `Bearer ${API_KEY}`; }
                         const response = await fetch(pollUrl, { headers: pollHeaders });
                         if (!response.ok) {
                             if (response.status === 400) {
                                 badRequestCount++;
+                                if (!toggledRoute) {
+                                    pollUrl = (pollUrl === pollUrlSingular) ? pollUrlPlural : pollUrlSingular;
+                                    toggledRoute = true;
+                                    badRequestCount = 0;
+                                    setTimeout(poll, 2000);
+                                    return;
+                                }
                                 if (badRequestCount >= 3) {
                                     await markFailed(taskId, "任务查询接口返回 400（路径或鉴权问题）");
                                     return;
