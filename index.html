@@ -703,7 +703,8 @@
                             // 如果是当前刚刚提交的任务，也可以直接显示在主播放器 (可选优化)
 
                         } else if (status === 'failed' || status === 'failure' || status === 'cancelled') {
-                            await markFailed(taskId, "服务端返回失败");
+                            const errorMsg = result.error || result.message || "服务端返回失败";
+                            await markFailed(taskId, errorMsg);
                         } else {
                             // 继续轮询
                             if (attempts < maxAttempts) {
