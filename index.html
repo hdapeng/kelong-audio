@@ -808,6 +808,9 @@
                             <button onclick="window.regenerateTask('${task.id}')" class="mt-2 w-full text-xs bg-white border border-gray-300 text-gray-600 py-1 rounded hover:bg-gray-100 transition">
                                 🔄 重新生成 / 回填参数
                             </button>
+                            <button onclick="window.quickRegenerateTask('${task.id}')" class="mt-2 w-full text-xs bg-blue-600 text-white py-1 rounded hover:bg-blue-700 transition">
+                                ⚡ 一键重新生成
+                            </button>
                         `;
 
                         card.innerHTML = `
@@ -905,6 +908,25 @@
 
                 } catch (e) {
                     console.error("Regenerate error:", e);
+                }
+            };
+
+            window.quickRegenerateTask = async (taskId) => {
+                try {
+                    const tasks = await window.dbLayer.getTasks();
+                    const task = tasks.find(t => t.id === taskId);
+                    if (!task) return;
+                    const inputTextEl = document.getElementById('input-text');
+                    const promptAudioEl = document.getElementById('input-prompt-audio-url');
+                    const promptTextEl = document.getElementById('input-prompt-text');
+                    const remarkEl = document.getElementById('input-remark');
+                    if (inputTextEl) inputTextEl.value = task.full_text || '';
+                    if (promptAudioEl) promptAudioEl.value = task.prompt_audio || '';
+                    if (promptTextEl) promptTextEl.value = task.prompt_text || '';
+                    if (remarkEl) remarkEl.value = task.remark || '';
+                    await handleAsyncGeneration();
+                } catch (e) {
+                    console.error('Quick regenerate error:', e);
                 }
             };
 
