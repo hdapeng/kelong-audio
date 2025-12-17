@@ -164,6 +164,24 @@
         </div>
     </aside>
 
+    <!-- Confirm Delete Modal -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-80 shadow-2xl transform transition-all">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">确认删除?</h3>
+            <p id="delete-modal-msg" class="text-gray-600 text-sm mb-6">您确定要删除此任务吗？</p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="window.closeDeleteModal()"
+                    class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm">
+                    取消
+                </button>
+                <button id="confirm-delete-btn" onclick="window.performDelete()"
+                    class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition text-sm">
+                    删除
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="db.js"></script>
     <script>
         // 版本控制逻辑
@@ -1188,19 +1206,63 @@
                 });
             }, 1000);
 
-            // 暴露给全局的删除函数
-            window.deleteTask = async (taskId) => {
-                if (!confirm('确定要删除这条任务记录吗？(不会删除服务端数据)')) return;
+            // --- Custom Modal Logic ---
+            let pendingDeleteId = null;
+            let isBulkDelete = false;
+
+            window.openDeleteModal = (msg) => {
+                const modal = document.getElementById('delete-modal');
+                const msgEl = document.getElementById('delete-modal-msg');
+                if (modal && msgEl) {
+                    msgEl.textContent = msg;
+                    modal.classList.remove('hidden');
+                }
+            };
+
+            window.closeDeleteModal = () => {
+                const modal = document.getElementById('delete-modal');
+                if (modal) modal.classList.add('hidden');
+                pendingDeleteId = null;
+                isBulkDelete = false;
+            };
+
+            window.performDelete = async () => {
+                window.closeDeleteModal();
+
                 try {
-                    if (window.dbLayer) {
-                        await window.dbLayer.deleteTask(taskId);
-                        await renderTaskList();
-                        window.updateBulkDeleteState();
+                    if (isBulkDelete) {
+                        const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
+                        const ids = Array.from(checkedBoxes).map(cb => cb.value);
+                        if (window.dbLayer) {
+                            for (const id of ids) {
+                                await window.dbLayer.deleteTask(id);
+                            }
+                            await renderTaskList();
+                            const selectAllCheckbox = document.getElementById('select-all-tasks');
+                            if (selectAllCheckbox) {
+                                selectAllCheckbox.checked = false;
+                                selectAllCheckbox.indeterminate = false;
+                            }
+                            window.updateBulkDeleteState();
+                        }
+                    } else if (pendingDeleteId) {
+                        if (window.dbLayer) {
+                            await window.dbLayer.deleteTask(pendingDeleteId);
+                            await renderTaskList();
+                            window.updateBulkDeleteState();
+                        }
                     }
                 } catch (e) {
-                    console.error("Delete failed:", e);
-                    alert("删除失败: " + e.message);
+                    console.error("Delete operation failed:", e);
+                    alert("操作失败: " + e.message);
                 }
+            };
+
+            // 暴露给全局的删除函数
+            window.deleteTask = (taskId) => {
+                pendingDeleteId = taskId;
+                isBulkDelete = false;
+                window.openDeleteModal('确定要删除这条任务记录吗？(不会删除服务端数据)');
             };
 
             // 批量删除状态更新
@@ -1233,30 +1295,13 @@
             }
 
             if (bulkDeleteBtn) {
-                bulkDeleteBtn.addEventListener('click', async () => {
+                bulkDeleteBtn.addEventListener('click', () => {
                     const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
                     if (checkedBoxes.length === 0) return;
 
-                    if (!confirm(`确定要删除选中的 ${checkedBoxes.length} 条任务吗？`)) return;
-
-                    try {
-                        const ids = Array.from(checkedBoxes).map(cb => cb.value);
-                        if (window.dbLayer) {
-                            for (const id of ids) {
-                                await window.dbLayer.deleteTask(id);
-                            }
-                            await renderTaskList();
-                            // 重置全选状态
-                            if (selectAllCheckbox) {
-                                selectAllCheckbox.checked = false;
-                                selectAllCheckbox.indeterminate = false;
-                            }
-                            window.updateBulkDeleteState();
-                        }
-                    } catch (e) {
-                        console.error("Bulk delete failed:", e);
-                        alert("批量删除部分失败: " + e.message);
-                    }
+                    isBulkDelete = true;
+                    pendingDeleteId = null;
+                    window.openDeleteModal(`确定要删除选中的 ${checkedBoxes.length} 条任务吗？`);
                 });
             }
 
