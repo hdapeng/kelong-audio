@@ -74,6 +74,9 @@ export default {
             Object.keys(corsHeaders).forEach(key => newHeaders.set(key, corsHeaders[key]));
             newHeaders.delete('set-cookie');
 
+            // 添加调试头 (帮助排查路径问题)
+            newHeaders.set('X-Debug-Target-Url', targetUrl);
+
             return new Response(upstreamResponse.body, {
                 status: upstreamResponse.status,
                 headers: newHeaders
