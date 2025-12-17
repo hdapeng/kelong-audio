@@ -51,7 +51,8 @@ export default {
 
         try {
             const headers = {
-                'Authorization': `Bearer ${env.GITEE_API_KEY}`
+                'Authorization': `Bearer ${env.GITEE_API_KEY}`,
+                'User-Agent': 'kelong-audio-client/1.0'
             };
 
             if (method === 'POST') {
