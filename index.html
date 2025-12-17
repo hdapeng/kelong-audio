@@ -813,6 +813,9 @@
                              // 计算耗时 (添加 dynamic-timer 类以便后续 JS 动态更新)
                              const elapsed = Math.floor((Date.now() - task.created_at) / 1000);
                              controlsHtml = `<div class="mt-2 text-xs text-gray-500 text-center dynamic-timer" data-start-time="${task.created_at}">已耗时: ${elapsed}s</div>`;
+                        } else if (task.status === 'failed' || task.status === 'cancelled') {
+                             // 失败状态下显示错误信息
+                             controlsHtml = `<div class="mt-2 text-xs text-red-500 break-words">${task.error_message || '未知错误'}</div>`;
                         }
 
                         // 重新生成按钮 (所有状态都显示，方便重试或再次生成)
@@ -983,6 +986,7 @@
                         const existing = tasks.find(t => t.id === taskId);
                         if (existing) {
                             existing.status = 'failed';
+                            existing.error_message = reason;
                             await window.dbLayer.saveTask(existing);
                         }
                     }

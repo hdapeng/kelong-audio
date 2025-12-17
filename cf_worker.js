@@ -33,7 +33,8 @@ export default {
     else if ((path.includes('/task/') || path.includes('/tasks/')) && method === 'GET') {
         const parts = path.split('/');
         const taskId = parts[parts.length - 1];
-        const resource = 'task';
+        // 动态判断是 task 还是 tasks
+        const resource = path.includes('/tasks/') ? 'tasks' : 'task';
         if (taskId) {
             targetUrl = `https://ai.gitee.com/v1/${resource}/${taskId}`;
         }
