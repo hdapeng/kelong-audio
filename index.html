@@ -1228,10 +1228,15 @@
             };
 
             window.performDelete = async () => {
+                // Capture state before closing modal (which clears these variables)
+                const idToDelete = pendingDeleteId;
+                const bulkMode = isBulkDelete;
+
                 window.closeDeleteModal();
 
                 try {
-                    if (isBulkDelete) {
+                    console.log("Performing delete. Bulk:", bulkMode, "ID:", idToDelete);
+                    if (bulkMode) {
                         const checkedBoxes = document.querySelectorAll('.task-checkbox:checked');
                         const ids = Array.from(checkedBoxes).map(cb => cb.value);
                         if (window.dbLayer) {
@@ -1246,12 +1251,14 @@
                             }
                             window.updateBulkDeleteState();
                         }
-                    } else if (pendingDeleteId) {
+                    } else if (idToDelete) {
                         if (window.dbLayer) {
-                            await window.dbLayer.deleteTask(pendingDeleteId);
+                            await window.dbLayer.deleteTask(idToDelete);
                             await renderTaskList();
                             window.updateBulkDeleteState();
                         }
+                    } else {
+                        console.warn("No ID to delete and not bulk mode");
                     }
                 } catch (e) {
                     console.error("Delete operation failed:", e);
