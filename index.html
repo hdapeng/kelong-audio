@@ -580,6 +580,69 @@
                 return result;
             }
 
+            async function autoRegenerateTask(oldTaskId) {
+                console.log(`Auto-regenerating task ${oldTaskId}...`);
+                try {
+                    // 1. 获取旧任务数据
+                    let oldTask = null;
+                    if (window.dbLayer) {
+                        const tasks = await window.dbLayer.getTasks();
+                        oldTask = tasks.find(t => t.id === oldTaskId);
+                    }
+
+                    if (!oldTask) {
+                        console.error("Old task not found in DB, cannot regenerated.");
+                        return;
+                    }
+
+                    // 2. 构造 Payload
+                    // 注意：由于之前 saveTask 可能没存 input 下全文，这里优先用 full_text，如果没有则用 text_preview (可能有风险)
+                    // 在之前的代码分析中，我们发现 saveTask 确实保存了 full_text (见 line 509: full_text: text)
+                    const payload = {
+                        inputs: oldTask.full_text || oldTask.text_preview,
+                        model: "IndexTTS-2",
+                        voice: "alloy",
+                        prompt_audio_url: oldTask.prompt_audio
+                    };
+                    if (oldTask.prompt_text) payload.prompt_text = oldTask.prompt_text;
+
+                    // 3. 提交新任务
+                    if (btnStatusText) btnStatusText.textContent = "旧任务丢失，自动重试中...";
+                    const responseData = await submitAsyncTask(payload);
+                    const newTaskId = responseData.task_id || responseData.id;
+                    const upstreamPollUrl = responseData.urls?.get;
+
+                    console.log(`Auto-regenerated: ${oldTaskId} -> ${newTaskId}`);
+
+                    // 4. 更新 DB
+                    if (window.dbLayer) {
+                        // 删除旧任务
+                        await window.dbLayer.deleteTask(oldTaskId);
+
+                        // 创建新任务 (复制旧任务的元数据)
+                        const newTask = {
+                            ...oldTask,
+                            id: newTaskId,
+                            api_task_id: newTaskId,
+                            status: 'pending',
+                            created_at: Date.now(), // 更新创建时间
+                            error_message: null // 清除错误信息
+                        };
+                        await window.dbLayer.saveTask(newTask);
+                    }
+
+                    // 5. 启动对新任务的轮询
+                    startPolling(newTaskId, upstreamPollUrl);
+
+                    // 6. 刷新列表
+                    renderTaskList();
+
+                } catch (e) {
+                    console.error("Auto-regenerate failed:", e);
+                    await markFailed(oldTaskId, "自动重试失败: " + e.message);
+                }
+            }
+
             // 轮询管理 map (已移至顶部)
             const TIMEOUT_SECONDS = 600;
 
@@ -612,6 +675,7 @@
                 let attempts = 0;
                 let badRequestCount = 0;
                 let notFoundCount = 0;
+                let taskNotFoundCount = 0;
 
                 const poll = async () => {
                     if (!activePolls.has(taskId)) return; // 停止轮询
@@ -662,9 +726,16 @@
                                     } catch (e) { }
 
                                     if (isTaskNotFoundError) {
-                                        // 特殊处理：如果是"任务不存在"，可能是由于服务端数据同步延迟
-                                        // 不计入 badRequestCount，允许继续轮询（直到总超时）
-                                        console.warn("Task not found (400), retrying for consistency...");
+                                        // "任务不存在" 计数
+                                        taskNotFoundCount++;
+                                        console.warn(`Task not found (400), attempt ${taskNotFoundCount}/3...`);
+
+                                        if (taskNotFoundCount >= 3) {
+                                            console.warn("Task appears lost. Auto-regenerating...");
+                                            activePolls.delete(taskId); // 停止当前轮询
+                                            await autoRegenerateTask(taskId); // 触发自动重新提交
+                                            return;
+                                        }
                                     } else {
                                         badRequestCount++;
                                         if (badRequestCount >= 3) {
