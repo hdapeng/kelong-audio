@@ -58,9 +58,11 @@ export default {
                 headers['Content-Type'] = 'application/json';
             }
 
-            // 转发 Accept 头
+            // 转发 Accept 头，如果没有则默认 application/json
             if (req.headers.get('Accept')) {
                 headers['Accept'] = req.headers.get('Accept');
+            } else {
+                headers['Accept'] = 'application/json';
             }
 
             const upstreamResponse = await fetch(targetUrl, {
