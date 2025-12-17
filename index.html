@@ -651,16 +651,26 @@
                             if (response.status === 400 || response.status === 404) {
                                 // 移除自动切换路径的逻辑，强制使用单数路径
                                 if (response.status === 400) {
+                                    let isTaskNotFoundError = false;
                                     // 尝试读取并打印错误详情
                                     try {
                                         const errText = await response.text();
                                         console.error(`Polling 400 Error Body:`, errText);
+                                        if (errText.includes("任务不存在")) {
+                                            isTaskNotFoundError = true;
+                                        }
                                     } catch (e) { }
 
-                                    badRequestCount++;
-                                    if (badRequestCount >= 3) {
-                                        await markFailed(taskId, "任务查询接口返回 400（请查看控制台错误详情）");
-                                        return;
+                                    if (isTaskNotFoundError) {
+                                        // 特殊处理：如果是"任务不存在"，可能是由于服务端数据同步延迟
+                                        // 不计入 badRequestCount，允许继续轮询（直到总超时）
+                                        console.warn("Task not found (400), retrying for consistency...");
+                                    } else {
+                                        badRequestCount++;
+                                        if (badRequestCount >= 3) {
+                                            await markFailed(taskId, "任务查询接口返回 400（请查看控制台错误详情）");
+                                            return;
+                                        }
                                     }
                                 }
                                 if (response.status === 404) {
