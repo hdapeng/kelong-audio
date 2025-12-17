@@ -165,7 +165,8 @@
     </aside>
 
     <!-- Confirm Delete Modal -->
-    <div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center">
+    <div id="delete-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+        style="z-index: 9999;">
         <div class="bg-white rounded-lg p-6 w-80 shadow-2xl transform transition-all">
             <h3 class="text-lg font-bold text-gray-800 mb-2">确认删除?</h3>
             <p id="delete-modal-msg" class="text-gray-600 text-sm mb-6">您确定要删除此任务吗？</p>
@@ -1260,6 +1261,7 @@
 
             // 暴露给全局的删除函数
             window.deleteTask = (taskId) => {
+                console.log("Delete requested for:", taskId);
                 pendingDeleteId = taskId;
                 isBulkDelete = false;
                 window.openDeleteModal('确定要删除这条任务记录吗？(不会删除服务端数据)');
