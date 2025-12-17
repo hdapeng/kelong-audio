@@ -626,14 +626,7 @@
                         const response = await fetch(pollUrl, { headers: pollHeaders });
                         if (!response.ok) {
                             if (response.status === 400 || response.status === 404) {
-                                if (!toggledRoute) {
-                                    pollUrl = (pollUrl === pollUrlSingular) ? pollUrlPlural : pollUrlSingular;
-                                    toggledRoute = true;
-                                    badRequestCount = 0;
-                                    notFoundCount = 0;
-                                    setTimeout(poll, 2000);
-                                    return;
-                                }
+                                // 移除自动切换路径的逻辑，强制使用单数路径
                                 if (response.status === 400) {
                                     badRequestCount++;
                                     if (badRequestCount >= 3) {
