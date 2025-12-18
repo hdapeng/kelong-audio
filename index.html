@@ -486,6 +486,24 @@
             async function handleAsyncGeneration() {
                 console.log('生成按钮被点击，开始处理 (v1.1 Async)...');
 
+                // 0. 并发检查 (Pre-check)
+                if (window.dbLayer) {
+                    try {
+                        const tasks = await window.dbLayer.getTasks();
+                        // 检查是否有 pending 或 running 的任务
+                        const runningTask = tasks.find(t => t.status === 'pending' || t.status === 'running' || t.status === 'in_progress');
+                        if (runningTask) {
+                            // 弹窗警告
+                            const confirmContinue = confirm(`当前有一个任务 (ID: ...${runningTask.id.slice(-4)}) 正在进行中。\n\n由于服务端资源限制，同时只能运行一个任务。继续提交大概率会失败。\n\n是否仍要强行提交？`);
+                            if (!confirmContinue) {
+                                return; // 用户取消
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Concurrency check failed:", e);
+                    }
+                }
+
                 // 1. 获取输入
                 let text = inputText.value;
                 const promptAudioUrl = inputPromptAudioUrl.value;
