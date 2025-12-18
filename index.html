@@ -483,96 +483,158 @@
 
             // --- v1.1 异步生成逻辑 ---
 
-            async function handleAsyncGeneration() {
-                console.log('生成按钮被点击，开始处理 (v1.1 Async)...');
+            // --- v1.1 异步生成逻辑 (带自动排队) ---
 
-                // 0. 并发检查 (Pre-check)
-                if (window.dbLayer) {
-                    try {
-                        const tasks = await window.dbLayer.getTasks();
-                        // 检查是否有 pending 或 running 的任务
-                        const runningTask = tasks.find(t => t.status === 'pending' || t.status === 'running' || t.status === 'in_progress');
-                        if (runningTask) {
-                            // 弹窗警告
-                            const confirmContinue = confirm(`当前有一个任务 (ID: ...${runningTask.id.slice(-4)}) 正在进行中。\n\n由于服务端资源限制，同时只能运行一个任务。继续提交大概率会失败。\n\n是否仍要强行提交？`);
-                            if (!confirmContinue) {
-                                return; // 用户取消
-                            }
-                        }
-                    } catch (e) {
-                        console.warn("Concurrency check failed:", e);
-                    }
-                }
+            // 提交任务的核心逻辑 (独立的函数，供立即提交和队列提交使用)
+            async function processTaskSubmission(taskData, existingTaskId = null) {
+                const { text, promptAudioUrl, promptText, remark } = taskData;
 
-                // 1. 获取输入
-                let text = inputText.value;
-                const promptAudioUrl = inputPromptAudioUrl.value;
-                const promptText = inputPromptText.value;
-                const remark = document.getElementById('input-remark').value; // 获取备注
-
-                if (!text || !promptAudioUrl) {
-                    showError("\"要转换的文本\"和\"Prompt Audio URL\"字段不能为空。");
-                    return;
-                }
-
-                // 2. 构造 Payload
+                // 构造 Payload
                 const payload = {
                     inputs: text,
-                    model: "IndexTTS-2",
-                    voice: "alloy",
+                    model: "IndexTTS-2", // 硬编码
+                    voice: "alloy", // 硬编码
                     prompt_audio_url: promptAudioUrl
                 };
                 if (promptText) payload.prompt_text = promptText;
 
                 try { localStorage.setItem(LAST_URL_KEY, promptAudioUrl); } catch (e) { }
 
-                // 3. UI 反馈
-                setLoading(true);
-                btnStatusText.textContent = "正在提交任务...";
+                // 提交任务
+                const responseData = await submitAsyncTask(payload);
+                const apiTaskId = responseData.task_id || responseData.id;
+                const upstreamPollUrl = responseData.urls?.get;
 
-                try {
-                    // 4. 提交任务
-                    const responseData = await submitAsyncTask(payload);
-                    const taskId = responseData.task_id || responseData.id;
-                    const upstreamPollUrl = responseData.urls?.get;
+                console.log("Task submitted to API, ID:", apiTaskId);
+                window.lastSubmittedTaskId = apiTaskId;
 
-                    console.log("Task submitted, ID:", taskId, "Poll URL:", upstreamPollUrl);
-                    window.lastSubmittedTaskId = taskId;
+                // 如果是队列中的任务 (existingTaskId 存在)，我们需要更新它的 ID (或者删除旧的存新的)
+                // 简单起见，我们总是创建一个新的 task 记录，并让旧的 "queued" 记录被删除或更新
 
-                    // 5. 存入 DB
-                    const newTask = {
-                        id: taskId,
-                        api_task_id: taskId,
-                        full_text: text, // 保存完整文本用于回填
-                        prompt_text: promptText, // 保存 prompt text
-                        text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
-                        prompt_audio: promptAudioUrl,
-                        remark: remark || '', // 使用用户输入的备注
-                        status: 'pending',
-                        created_at: Date.now(),
-                        audio_blob: null,
-                        duration: 0
-                    };
+                const finalTaskId = apiTaskId;
 
-                    if (window.dbLayer) {
-                        await window.dbLayer.saveTask(newTask);
-                        console.log("Task saved to DB");
+                // 存入 DB
+                const newTask = {
+                    id: finalTaskId,
+                    api_task_id: finalTaskId,
+                    full_text: text,
+                    prompt_text: promptText,
+                    text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+                    prompt_audio: promptAudioUrl,
+                    remark: remark || '',
+                    status: 'pending',
+                    created_at: Date.now(),
+                    audio_blob: null,
+                    duration: 0
+                };
+
+                if (window.dbLayer) {
+                    await window.dbLayer.saveTask(newTask);
+
+                    // 如果存在排队占位符 ID，删除它
+                    if (existingTaskId && existingTaskId !== finalTaskId) {
+                        try {
+                            await window.dbLayer.deleteTask(existingTaskId);
+                            console.log(`Removed queued placeholder task ${existingTaskId}`);
+                        } catch (e) { console.warn("Failed to remove placeholder:", e); }
                     }
+                }
 
-                    // 6. 启动轮询
-                    startPolling(taskId, upstreamPollUrl);
+                // 启动轮询
+                startPolling(finalTaskId, upstreamPollUrl);
 
-                    // 7. 更新 UI
+                // 更新 UI
+                renderTaskList();
+
+                return finalTaskId;
+            }
+
+            // 添加到队列
+            async function addToQueue(taskData) {
+                const { text, promptAudioUrl, promptText, remark } = taskData;
+                const tempId = 'queue_' + Date.now();
+
+                const queuedTask = {
+                    id: tempId,
+                    api_task_id: null, // 尚未提交
+                    full_text: text,
+                    prompt_text: promptText,
+                    text_preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+                    prompt_audio: promptAudioUrl,
+                    remark: remark || '',
+                    status: 'queued', // 新状态
+                    created_at: Date.now(),
+                    audio_blob: null,
+                    duration: 0
+                };
+
+                if (window.dbLayer) {
+                    await window.dbLayer.saveTask(queuedTask);
+                    console.log("Task added to queue:", tempId);
                     renderTaskList();
+                }
 
-                    // 恢复按钮状态 (异步模式下，提交成功即可恢复按钮，无需等待生成完成)
-                    btnStatusText.textContent = "任务已提交";
-                    setTimeout(() => setLoading(false), 1000);
+                return tempId;
+            }
 
-                } catch (error) {
-                    console.error("Async submission failed:", error);
-                    showError("提交任务失败: " + error.message);
-                    setLoading(false);
+            async function handleAsyncGeneration() {
+                console.log('生成按钮被点击，检查队列...');
+
+                // 1. 获取输入
+                let text = inputText.value;
+                const promptAudioUrl = inputPromptAudioUrl.value;
+                const promptText = inputPromptText.value;
+                const remark = document.getElementById('input-remark').value;
+
+                if (!text || !promptAudioUrl) {
+                    showError("\"要转换的文本\"和\"Prompt Audio URL\"字段不能为空。");
+                    return;
+                }
+
+                const taskData = { text, promptAudioUrl, promptText, remark };
+
+                // 2. 并发检查与排队逻辑
+                let shouldQueue = false;
+                if (window.dbLayer) {
+                    try {
+                        const tasks = await window.dbLayer.getTasks();
+                        // 检查是否有 pending 或 running 的任务
+                        const runningTask = tasks.find(t => t.status === 'pending' || t.status === 'running' || t.status === 'in_progress');
+                        if (runningTask) {
+                            shouldQueue = true;
+                        }
+                    } catch (e) {
+                        console.warn("Queue check failed:", e);
+                    }
+                }
+
+                setLoading(true);
+
+                if (shouldQueue) {
+                    // 加入队列
+                    try {
+                        btnStatusText.textContent = "正在加入队列...";
+                        await addToQueue(taskData);
+                        btnStatusText.textContent = "已加入等待队列";
+                        setTimeout(() => setLoading(false), 1500);
+                        renderTaskList(); // 确保列表刷新
+                    } catch (e) {
+                        console.error("Queue add failed:", e);
+                        showError("加入队列失败: " + e.message);
+                        setLoading(false);
+                    }
+                } else {
+                    // 立即提交
+                    try {
+                        btnStatusText.textContent = "正在提交任务...";
+                        await processTaskSubmission(taskData);
+                        btnStatusText.textContent = "任务已提交";
+                        setTimeout(() => setLoading(false), 1000);
+                    } catch (error) {
+                        console.error("Async submission failed:", error);
+                        showError("提交任务失败: " + error.message);
+                        setLoading(false);
+                    }
                 }
             }
 
@@ -939,6 +1001,10 @@
                             statusIcon = '🚫';
                             statusClass = 'text-gray-600';
                             statusText = '已取消';
+                        } else if (task.status === 'queued') {
+                            statusIcon = '🕒';
+                            statusClass = 'text-blue-500';
+                            statusText = '排队中'; // 等待上一条完成
                         }
 
                         // 时间格式化
@@ -1354,6 +1420,57 @@
                     window.openDeleteModal(`确定要删除选中的 ${checkedBoxes.length} 条任务吗？`);
                 });
             }
+
+            // 队列监控循环 (Queue Monitor)
+            async function monitorQueue() {
+                if (!window.dbLayer) return;
+
+                try {
+                    const tasks = await window.dbLayer.getTasks();
+
+                    // 1. 检查是否有正在运行的任务
+                    const runningTask = tasks.find(t => t.status === 'pending' || t.status === 'running' || t.status === 'in_progress');
+                    if (runningTask) {
+                        // 忙碌中，不处理队列
+                        return;
+                    }
+
+                    // 2. 检查是否有排队中的任务 (按创建时间升序，最旧的先执行)
+                    // getTasks 返回的是按 created_at 降序，所以我们需要倒序查找或者反转
+                    // queued 任务通常在列表顶部(因为是新加的)，但逻辑上我们要先执行最早加入的。
+                    // 实际上 queued 任务 ID 是 queue_Timestamp，Timestamp 是创建时间。
+                    // 我们可以直接找 status === 'queued' 的任务，然后按 created_at 排序。
+
+                    const queuedTasks = tasks.filter(t => t.status === 'queued').sort((a, b) => a.created_at - b.created_at);
+
+                    if (queuedTasks.length > 0) {
+                        const nextTask = queuedTasks[0];
+                        console.log("Queue Monitor: Processing next task", nextTask.id);
+
+                        // 构造 taskData
+                        const taskData = {
+                            text: nextTask.full_text,
+                            promptAudioUrl: nextTask.prompt_audio,
+                            promptText: nextTask.prompt_text,
+                            remark: nextTask.remark
+                        };
+
+                        // 提交任务 (传入 ID 以便删除占位符)
+                        try {
+                            await processTaskSubmission(taskData, nextTask.id);
+                        } catch (e) {
+                            console.error("Queue Monitor: Failed to process task", nextTask.id, e);
+                            // 标记为失败，避免卡死队列
+                            await markFailed(nextTask.id, "自动提交失败: " + e.message);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Queue monitor error:", e);
+                }
+            }
+
+            // 启动队列监控 (每 3 秒检查一次)
+            setInterval(monitorQueue, 3000);
 
         }); // 关闭 DOMContentLoaded 事件监听器
 
