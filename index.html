@@ -825,7 +825,24 @@
                             // 如果是当前刚刚提交的任务，也可以直接显示在主播放器 (可选优化)
 
                         } else if (status === 'failed' || status === 'failure' || status === 'cancelled') {
-                            const errorMsg = result.error || result.message || "服务端返回失败";
+                            console.error("Task failed, full result:", result); // 打印完整结果以便调试
+
+                            let errorMsg = "服务端返回失败";
+                            // 尝试从不同字段提取错误信息
+                            if (result.error_message) {
+                                errorMsg = result.error_message;
+                            } else if (result.error) {
+                                if (typeof result.error === 'string') {
+                                    errorMsg = result.error;
+                                } else if (typeof result.error === 'object') {
+                                    errorMsg = result.error.message || JSON.stringify(result.error);
+                                }
+                            } else if (result.message) {
+                                errorMsg = result.message;
+                            } else if (result.output && result.output.error) {
+                                errorMsg = result.output.error;
+                            }
+
                             await markFailed(taskId, errorMsg);
                         } else {
                             // 继续轮询
