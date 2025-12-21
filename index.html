@@ -929,31 +929,7 @@
                             // 翻译特定的并发限制错误
                             if (typeof errorMsg === 'string' &&
                                 (errorMsg.includes("maximum number of running tasks") || errorMsg.includes("exceeds the limit"))) {
-
-                                console.warn(`Task ${taskId} hit concurrency limit. Re-queueing...`);
-
-                                // 1. 停止当前轮询
-                                activePolls.delete(taskId);
-
-                                // 2. 更新任务状态为 queued
-                                if (window.dbLayer) {
-                                    const tasks = await window.dbLayer.getTasks();
-                                    const existing = tasks.find(t => t.id === taskId);
-                                    if (existing) {
-                                        existing.status = 'queued';
-                                        // existing.remark = (existing.remark || '') + ' [自动排队]'; // 可选：添加备注
-                                        await window.dbLayer.saveTask(existing);
-                                    }
-                                }
-
-                                // 3. 设置全局冷却时间 (例如 5 秒后才允许处理下一个队列任务)
-                                window.nextQueueProcessTime = Date.now() + 5000;
-
-                                // 4. 刷新列表
-                                renderTaskList();
-
-                                // 5. 退出，不要标记为失败
-                                return;
+                                errorMsg = "生成失败：当前任务过多(服务端繁忙)，请稍后手动点击“重新生成”。";
                             }
 
                             await markFailed(taskId, errorMsg);
