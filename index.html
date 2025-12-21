@@ -1031,7 +1031,14 @@
                         } else if (task.status === 'queued') {
                             statusIcon = '🕒';
                             statusClass = 'text-blue-500';
-                            statusText = '排队中'; // 等待上一条完成
+
+                            // Check what we are waiting for
+                            const running = tasks.find(t => t.status === 'pending' || t.status === 'running' || t.status === 'in_progress');
+                            if (running) {
+                                statusText = `排队中 (等待: ${running.text_preview.slice(0, 10)}...)`;
+                            } else {
+                                statusText = '排队中 (服务端忙，自动重试中)';
+                            }
                         }
 
                         // 时间格式化
